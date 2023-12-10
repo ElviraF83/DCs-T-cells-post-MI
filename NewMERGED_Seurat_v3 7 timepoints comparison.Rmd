@@ -1,0 +1,543 @@
+---
+title: "test Seurat v3 integration"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#install.packages('Seurat')
+library(Seurat)
+library(Matrix)
+require(openxlsx)
+library(cowplot)
+library(scales)
+library(plyr)
+library(dplyr)
+library(stringr)
+library (reticulate)
+#install.packages('xlsx')
+#library('xlsx')
+#install.packages(c("readxl", "writexl"))
+library(readxl)
+library (writexl)
+```
+
+```{r}
+Homeo.data <- Read10X("/Users/fortee/Documents/scRNAseq Seurat v3/Data/mm10Zsgreen1/MF17010/filtered_feature_bc_matrix/")
+Homeo <- CreateSeuratObject(counts = Homeo.data, project = "Homeo")
+Homeo
+rm (Homeo.data)
+
+D1.data <- Read10X("/Users/fortee/Documents/scRNAseq Seurat v3/Data/mm10Zsgreen1/MF17013/filtered_feature_bc_matrix/")
+D1 <- CreateSeuratObject(counts = D1.data, project = "D1")
+D1
+rm (D1.data)
+
+D3.data <- Read10X("/Users/fortee/Documents/scRNAseq Seurat v3/Data/mm10Zsgreen1/MF17014/filtered_feature_bc_matrix/")
+D3 <- CreateSeuratObject(counts = D3.data, project = "D3")
+D3
+rm (D3.data)
+
+D5.data <- Read10X("/Users/fortee/Documents/scRNAseq Seurat v3/Data/mm10Zsgreen1/MF17015/filtered_feature_bc_matrix/")
+D5 <- CreateSeuratObject(counts = D5.data, project = "D5")
+D5
+rm (D5.data)
+
+D7.data <- Read10X("/Users/fortee/Documents/scRNAseq Seurat v3/Data/mm10Zsgreen1/MF17016/filtered_feature_bc_matrix/")
+D7 <- CreateSeuratObject(counts = D7.data, project = "D7")
+D7
+rm (D7.data)
+
+D14.data <- Read10X("/Users/fortee/Documents/scRNAseq Seurat v3/Data/mm10Zsgreen1/MF17017/filtered_feature_bc_matrix/")
+D14 <- CreateSeuratObject(counts = D14.data, project = "D14")
+D14
+rm (D14.data)
+
+D28.data <- Read10X("/Users/fortee/Documents/scRNAseq Seurat v3/Data/mm10Zsgreen1/MF17018/filtered_feature_bc_matrix/")
+D28 <- CreateSeuratObject(counts = D28.data, project = "D28")
+D28
+rm (D28.data)
+
+
+```
+
+```{r}
+#https://satijalab.org/seurat/v3.0/merge_vignette.html
+
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+D7[["percent.mt"]] <- PercentageFeatureSet(D7, pattern = "^mt-")
+# Visualize QC metrics as a violin plot
+VlnPlot(D7, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+#pbmc <- subset(pbmc, subset = nFeature_RNA > 200 & nFeature_RNA < 2500 & percent.mt < 5)
+D7 <- subset(D7, subset = nFeature_RNA > 500)
+
+
+D7 <- NormalizeData(D7, verbose = FALSE)
+D7 <- FindVariableFeatures(D7, selection.method = "vst", nfeatures = 2000)
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(D7), 10)
+# plot variable features with and without labels
+plot1 <- VariableFeaturePlot(D7)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+CombinePlots(plots = list(plot1, plot2))
+
+
+```
+
+```{r}
+
+## cell cycle regerssion 2
+cc.genes <- readLines(con = "/Users/fortee/Documents/scRNAseq Seurat v3/Data/cell_cycle_vignette_files/regev_lab_cell_cycle_genes_mouse.txt")
+cc.genes <- str_to_title(cc.genes)
+s.genes <- cc.genes[1:43]
+g2m.genes <- cc.genes[44:97]
+
+
+#https://satijalab.org/seurat/v3.0/merge_vignette.html
+##Dan's function name=process_data, object of function (obj)
+
+process_data <- function(obj) {
+            obj <- PercentageFeatureSet(obj, pattern = "^mt-", col.name="percent.mt")
+            obj <- subset(obj, subset=nFeature_RNA > 200 & nFeature_RNA < 5000 & percent.mt < 25)
+            obj <- NormalizeData(obj, verbose = FALSE)#verbose = FALSE
+            obj <- FindVariableFeatures(obj, selection.method = "vst", nfeatures = 2000)
+            obj <- CellCycleScoring(obj, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+            obj <- ScaleData(obj, vars.to.regress=c('nFeature_RNA', 'nUMI', 'percent.mt', 'S.Score', 'G2M.Score'))
+            return(obj)   # or just obj
+}
+ 
+processed_obj_Homeo <- process_data(obj=Homeo)
+processed_obj_D1<- process_data(obj=D1)
+processed_obj_D3 <- process_data(obj=D3)
+processed_obj_D5 <- process_data(obj=D5)
+processed_obj_D7<- process_data(obj=D7)
+processed_obj_D14 <- process_data(obj=D14)
+processed_obj_D28 <- process_data(obj=D28)
+```
+
+
+```{r}
+#merge on normalized data
+merged7d <- merge(processed_obj_Homeo, y = c(processed_obj_D1, processed_obj_D3, processed_obj_D5, processed_obj_D7, processed_obj_D14, processed_obj_D28), add.cell.ids = c("Homeo", "D1", "D3", "D5", "D7", "D14", "D28"), project = "7TP",merge.data = TRUE)
+merged7d
+unique(sapply(X = strsplit(colnames(merged7d), split = "_"), FUN = "[", 1))
+table(merged7d$orig.ident)
+```
+```{r}
+# Run the standard workflow for visualization and clustering
+remove(D1, D14, D28, D3, D5, D7, Homeo, processed_obj_D1, processed_obj_D14, processed_obj_D28, processed_obj_D3, processed_obj_D5, processed_obj_D7)
+remove(processed_obj_Homeo)
+##impossible to run simple merge run out of memory. followed https://satijalab.org/seurat/v3.0/mca.html and scaled data after normalizing, and find variable features.
+merged7d <- NormalizeData(merged7d, normalization.method = "LogNormalize", scale.factor = 10000)
+merged7d <- FindVariableFeatures(merged7d)
+merged7d <- ScaleData(merged7d, verbose = FALSE)
+merged7d <- RunPCA(merged7d, npcs = 50, verbose = FALSE)
+#Alternative JawStrawplot https://satijalab.org/seurat/v3.0/pbmc3k_tutorial.html
+ElbowPlot(merged7d, ndim=50)
+# t-SNE and Clustering
+
+#merged7d <- RunUMAP(merged7d, reduction = "pca", dims = 1:32)
+merged7d <- FindNeighbors(merged7d, reduction = "pca", dims = 1:33)
+merged7d <- FindClusters(merged7d, resolution = 0.5)
+merged7d <- RunUMAP(merged7d, reduction = "pca", dims = 1:33)
+#pip install umap-learn on Terminal and restart R
+merged7d@meta.data$orig.ident <- factor(merged7d@meta.data$orig.ident, levels=c("Homeo","D1", "D3", "D5", "D7", "D14", "D28"))
+p1 <- DimPlot(merged7d, reduction = "umap", group.by = "orig.ident", cols = c("#ffbb00","#ff2f00","#b5ff3f","#3fffb9", "#00a6ff", "#00007f", "#0011ff"))
+#p1 = DimPlot(merged7d, reduction = "umap", group.by = "orig.ident")
+p2 = DimPlot(merged7d, reduction = "umap", label = TRUE)
+
+plot_grid(p1, p2)
+
+```
+
+
+```{r}
+DefaultAssay(merged7d) <- "RNA"
+merged7d.marker <- FindAllMarkers(merged7d, thresh.use=0.25, min.diff.pct = 0.3, only.pos = TRUE)
+merged7d.marker  <- cbind(merged7d.marker$gene, merged7d.marker[,1:ncol(merged7d.marker)])
+merged7d.marker  <- split(merged7d.marker , f=merged7d.marker$cluster)
+write_xlsx(merged7d.marker,"NewMerged_markers_3333ccm.xlsx")
+
+getwd()
+```
+
+
+
+
+
+
+
+```{r}
+clusters <- levels(merged7d) ##Way too long, Did not work just list Error in write_xlsx(conserved.markers, "FindMarkers_NODB6New.xlsx") : Argument x must be a data frame or list of data frames
+conserved.markers <- list()
+for (i in 1:length(clusters)) {
+            this_cluster <- clusters[i]
+            FindMarkers(merged7d, ident.1=this_cluster,  min.pct = 0.25)
+                        markers$cluster <- this_cluster
+                        conserved.markers[[paste0(this_cluster, " ")]] <- markers
+            }
+write_xlsx(conserved.markers,"ZsGreenMergedFindMarkers.xlsx")
+
+
+
+ markers6 <- FindMarkers(merged7d, ident.1="6",  min.pct = 0.25)
+ markers17 <- FindMarkers(All.combined, ident.1="17",  min.pct = 0.25)
+  markers18 <- FindMarkers(All.combined, ident.1="18",  min.pct = 0.25)
+  markers8 <- FindMarkers(All.combined, ident.1="8",  min.pct = 0.25)
+  markers13 <- FindMarkers(All.combined, ident.1="13",  min.pct = 0.25)
+  markers14 <- FindMarkers(All.combined, ident.1="14",  min.pct = 0.25)
+  markers16 <- FindMarkers(All.combined, ident.1="16",  min.pct = 0.25)
+  markers22 <- FindMarkers(All.combined, ident.1="22",  min.pct = 0.25)
+  
+```
+
+```{r}  
+Idents(merged7d)<- merged7d@meta.data$RNA_snn_res.0.5
+#merged7d<- RenameIdents(merged7d, `0` ="HEpiD" , `1` ="ECs" , `2` ="Macro" , `3` = "Myofb", `4` = "MonoI", `5` ="Neutrophils" , `6` ="HEpiDmt", `7` = "MFC_LR", `8` ="Bcells" , `9` ="PLS" , `10` ="MacroII" , `11` = "EndD", `12` = "NKT", `13` ="MonoII"    ,`14` = "DCs", `15` = "SMCs" , `16` ="IR"  , `17` ="ProlifMacro" , `18` ="Epicardium" ,`19` = "MacroIII" , `20` = "LymphECs", `21` ="ECsII" , `22` = "Prolif" , `23` ="BcellsCd19",  `24` = "SchwannCells",`25` ="BcellsECs" )
+merged7d<- RenameIdents(merged7d, `0` ="HEpiD" , `1` ="ECs" , `2` ="PLS" , `3` = "MonoI", `4` = "MacroI", `5` ="MFC_LR" , `6` ="Neutrophils", `7` = "Bcells", `8` ="DC_Macro" , `9` ="EndD" , `10` ="NKT" , `11` = "DC", `12` = "ProlifMyofb", `13` ="MacroII"    ,`14` = "IR", `15` = "SMCs" , `16` ="ProlifMacro"  , `17` ="Epicardium" , `18` ="DC_Macro2" ,`19` = "LymphECs" , `20` = "ECsII", `21` ="Prolif" , `22` = "BCells2" , `23` ="SchwannCells" )
+#merged7d<- StashIdent(MImerged7d, save.name ="celltype" )
+merged7d[["celltype"]] <- Idents(object = merged7d)
+p3 <- DimPlot(merged7d, reduction = "umap", label =FALSE,legend=TRUE, cols =c("HEpiD"="green","ECs"= "grey","MacroI"= "darkorange3", "Myofb"="forestgreen","ProlifMyofb"="limegreen","MonoI"="darkorange","Neutrophils"="mediumorchid","MFC_LR"="darkolivegreen","Bcells"="blue","Bcells2"="lightblue4","PLS"="greenyellow","MacroII"= "darkorange2","EndD"="mediumaquamarine","NKT"="lightslateblue","DC_Macro"="gold2","DC"="deepskyblue","SMCs"="red","IR"="darkgreen","ProlifMacro"="darkorange4","Epicardium"= "seagreen", "DC_Macro2"="orange4","LymphECs"= "violet","ECsII"= "honeydew2","Prolif"= "seagreen4","SchwannCells"= "tomato3"))
+
+plot_grid(p1, p3)
+#, "BcellsECs"="lightblue4","HEpiDmt"="limegreen","Bcells"="midnightblue"
+DimPlot(merged7d, label = TRUE)
+saveRDS(merged7d, "ZsGreen7TPMerged_32-25_ccmregression.rds")
+merged7d <- readRDS("ZsGreen7TPMerged_32-25_ccmregression.rds")
+```
+
+```{r} 
+merged7dm <- merged7d
+Idents(merged7dm)<- merged7dm@meta.data$RNA_snn_res.0.5
+merged7dm<- RenameIdents(merged7dm, `0` ="HEpiD" , `1` ="ECs" , `2` ="Macro" , `3` = "Myofb", `4` = "Mono", `5` ="Neutrophils" , `6` ="HEpiD", `7` = "MFC_LR", `8` ="Bcells" , `9` ="PLS" , `10` ="Macro" , `11` = "EndD", `12` = "NKT", `13` ="Mono"    ,`14` = "DCs", `15` = "SMCs" , `16` ="IR"  , `17` ="Macro" , `18` ="Epic" ,`19` = "Macro" , `20` = "ECs", `21` ="ECs" , `22` = "Prolif" , `23` ="Bcells",  `24` = "SchwannCells",`25` ="Bcells" )
+#merged7d<- StashIdent(MImerged7d, save.name ="celltype" )
+merged7dm[["celltypemerged"]] <- Idents(object = merged7dm)
+DimPlot(merged7dm, label =FALSE,legend=TRUE, cols =c("Fibros"="limegreen","ECs"= "grey","MacroMono"= "darkorange3","MyofbMFC"="forestgreen","Neutrophils"="mediumorchid","Bcells"="blue","NKT"="lightslateblue","DCs"="dodgerblue","SMCs"="red","Prolif"= "seagreen4","SchwannCells"= "tomato3"))
+DimPlot(merged7dm, label =FALSE,legend=TRUE, cols =c("Fibros"="darkseagreen1","ECs"= "grey","MacroMono"= "lightgoldenrod","MyofbMFC"="darkolivegreen1","Neutrophils"="khaki","Bcells"="slategray1","NKT"="mediumblue","DCs"="navyblue","SMCs"="thistle2","Prolif"= "grey50","SchwannCells"= "seashell2"))
+DimPlot(merged7dm, label =FALSE,legend=TRUE, cols =c("Fibros"="darkseagreen1","ECs"= "grey","MacroMono"= "peachpuff","MyofbMFC"="darkolivegreen1","Neutrophils"="moccasin","Bcells"="slategray1","NKT"="mediumblue","DCs"="orangered","SMCs"="thistle2","Prolif"= "grey50","SchwannCells"= "thistle3"))
+Idents(merged7dm)<- merged7dm@meta.data$celltypemerged
+Idents(merged7dm) <- factor(Idents(merged7d), levels = c("Fibros","MyofbMFC","ECs","SMCs","Prolif","SchwannCells", "Neutrophils","NKT","Bcells","MacroMono","DCs"))
+DefaultAssay(merged7dm) <- "RNA"
+clusters.averages2 <- AverageExpression(merged7dm, return.seurat=TRUE)
+Idents(clusters.averages2) <- factor(Idents(clusters.averages2), levels = c("Fibros","MyofbMFC","ECs","SMCs","Prolif","SchwannCells", "Neutrophils","NKT","Bcells","MacroMono","DCs"))
+DoHeatmap(clusters.averages2, features = c("Itgae", "Itgax", "Clec9a", "Clec10a", "Xcr1","H2-Ab1","H2-Aa","H2-Eb1","Cd79a","
+Cd209a","H2-DMb1"," Klrd1","H2-Oa","Fcgr1","Itgam", "Cd68", "Cd168", "Cxc3cr1", "Adgre1", "Lamp2", "Mertk", "Cd14"), size = 5, draw.lines=0, label=FALSE)
+markers.to.plot <- scan(file="/Users/fortee/Documents/scRNAseq Seurat v3/Data/gene2c.csv",what="character")
+markers.to.plot <- unique(markers.to.plot)
+
+Idents(merged7dm)<- merged7dm@meta.data$celltypemerged
+Idents(merged7dm) <- factor(Idents(merged7dm), levels = c("Fibros","MyofbMFC","ECs","SMCs","Prolif","SchwannCells", "Neutrophils","NKT","Bcells","MacroMono","DCs"))
+DotPlot(merged7dm, features = rev(markers.to.plot), dot.scale = 8) + RotatedAxis()+ scale_colour_gradient2(low = "#FF00FF", mid = "#000000", high = "#FFFF00")+theme(axis.text.x =element_text(face='italic')) +RotatedAxis()
+Idents(clusters.averages2) <- factor(Idents(clusters.averages2), levels = c("Fibros","MyofbMFC","ECs","SMCs","Prolif","SchwannCells", "Neutrophils","NKT","Bcells","MacroMono","DCs"))
+DoHeatmap(clusters.averages2, features = rev(markers.to.plot), size = 5, draw.lines=0, label=FALSE)+RotatedAxis()
+markers.to.plot <- scan(file="/Users/fortee/Documents/scRNAseq Seurat v3/Data/genesDCMacroNkT.csv",what="character")
+markers.to.plot <- unique(markers.to.plot)
+```
+
+
+```{r}
+Idents(merged7d) <- factor(Idents(merged7d), levels = c("HEpiD" , "ECs" , "Macro" ,  "Myofb", "MonoI", "Neutrophils" ,  "HEpiDmt", "MFC/LR", "Bcells" , "PLS"  , "MacroII", "EndD",  "NKT", "MonoII"    ,"DCs",  "SMCs" , "IR"  , "ProlifMacro" , "Epicardium" , "MacroIII" ,  "LymphECs","ECsII" ,  "Prolif" , "BcellsCd19",  "SchwannCells","BcellsECs" ))
+
+ DimPlot(merged7d, reduction = "umap", label =FALSE,legend=TRUE, cols =c("HEpiD"="green","ECs"= "grey","Macro"= "darkorange3", "Myofb"="forestgreen","MonoI"="darkorange","Neutrophils"="mediumorchid","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="blue","PLS"="greenyellow","MacroII"= "darkorange2","EndD"="mediumaquamarine","NKT"="lightslateblue","MonoII"="gold2","DCs"="deepskyblue","SMCs"="red","IR"="darkgreen","ProlifMacro"="darkorange4","Epicardium"= "seagreen", "MacroIII"="orange4","LymphECs"= "violet","ECsII"= "honeydew2","Prolif"= "seagreen4", "BcellsCd19"="midnightblue","SchwannCells"= "tomato3", "BcellsECs"="lightblue4"))
+
+markers.to.plot <- scan(file="/Users/fortee/Documents/scRNAseq Seurat v3/Data/gene.csv",what="character")
+#markers.to.plot <- c("Dpep1","Gpx3","Smoc2","Fabp4","Gpihbp1","Cd36","Ms4a7","Spp1","C1qb","Cthrc1","Col1a1","Postn","Acta2","Chil3","Plac8","Ccl9","Lyz2","S100a8","S100a9","Retnlg","Cxcl2","Dcn","Gsn", "mt-Cytb", "Cilp", "Comp", "Meox1","Igkc","Cd79a","Ighm","Pi16","Cd248","Ly6a"," C1qc, H2-Eb1, Cd74, Csf1r, Wif1, Dkk3,Ccl5,
+
+markers.to.plot <- unique (markers.to.plot)
+DotPlot(merged7d, features = rev(markers.to.plot), cols = c("#ffbb00","#ff2f00","#b5ff3f","#3fffb9", "#00a6ff", "#00007f", "#0011ff"), dot.scale = 8, 
+    split.by = "orig.ident") + RotatedAxis()
+
+DotPlot(merged7d, features = rev(markers.to.plot), dot.scale = 8, size=3) + RotatedAxis()+ scale_colour_gradient2(low = "#FF00FF", mid = "#000000", high = "#FFFF00")
+
+Idents(merged7d)<- merged7d@meta.data$RNA_snn_res.0.5
+ 
+DoHeatmap(merged7d, features = c("Itgae", "Itgax", "Clec9a", "Clec10a", "Xcr1", "Itgam","H2-Ab1","H2-Aa","H2-Eb1","Cd74","
+Cd209a","H2-DMb1"," Klrd1","H2-Oa","Fcgr1", "Cd68", "Cd168", "Cxc3cr1", "Adgre1", "Lamp2", "Mertk", "Cd14"), size = 3 )
+DotPlot(All.combined, features = "wpre-zsgreen", cols = c("#ffbb00","#ff2f00","#b5ff3f","#3fffb9", "#00a6ff", "#00007f", "#0011ff"), dot.scale = 8, 
+    split.by = "orig.ident") + RotatedAxis()
+FeaturePlot(object = merged7d, features = c("Itgam","Cd209a"), reduction = 'umap', pt.size = 1, blend = T, cols = c( "green", "red"), min.cutoff = 0, max.cutoff = 5, label=TRUE )
+RidgePlot(All.combined, features = "wpre-zsgreen", ncol = 2)
+FeaturePlot(object = merged7d, features =c("H2-Ab1","Cd209a"), reduction = 'umap', pt.size = 1, cols = c(  "grey","green"), min.cutoff = 0, max.cutoff = 5, label=TRUE )
+FeaturePlot(object = merged7d, features = "wpre-zsgreen", reduction = 'umap', pt.size = 1, cols = c(  "grey","green"), min.cutoff = 2, max.cutoff = 5, label=TRUE )
+FeaturePlot(object = merged7d, features = c("Nkg7","Trbc2","Cd3g", "Cd3e"), reduction = 'umap', pt.size = 1, cols = c(  "grey0","green"), min.cutoff = 0, max.cutoff = 5 )
+
+
+DCMacro <- subset (All.combined, idents=c("DCs", "Macro", "MacroII", "MacroIII","MonoI","MonoII"))
+clusters.averages <- AverageExpression(DCMacro, return.seurat=TRUE)
+DoHeatmap(clusters.averages, features = c("Itgae", "Itgax", "Clec9a", "Clec10a", "Xcr1", "Itgam","H2-Ab1","H2-Aa","H2-Eb1","Cd74","
+Cd209a","H2-DMb1"," Klrd1","H2-Oa","Fcgr1", "Cd68", "Cd168", "Cxc3cr1", "Adgre1", "Lamp2", "Mertk", "Cd14"),combine=TRUE, label=FALSE, draw.lines=FALSE)
+```
+```{r}
+merged7d@meta.data$celltype <- factor(Fibros@meta.data$orig.ident, levels=c("Homeo","D1", "D3", "D5", "D7", "D14", "D28"))
+p1 <- DimPlot(Fibros, reduction = "umap", group.by = "orig.ident", cols = c("#ffbb00","#ff2f00","#b5ff3f","#3fffb9", "#00a6ff", "#00007f", "#0011ff"))
+p2 <- DimPlot(Fibros, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+
+Idents(merged7d)<- merged7d@meta.data$orig.ident
+merged7dHomeo <- subset (merged7d, idents=c("Homeo"))#20
+ DimPlot(merged7dHomeo, label = FALSE, legend=FALSE, group.by = "celltype", cols=c("HEpiD"="green","ECs"= "grey","Macro"= "darkorange3", "Myofb"="forestgreen","MonoI"="darkorange","Neutrophils"="mediumorchid","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="blue","PLS"="greenyellow","MacroII"= "darkorange2","EndD"="mediumaquamarine","NKT"="lightslateblue","MonoII"="gold2","DCs"="deepskyblue","SMCs"="red","IR"="darkgreen","ProlifMacro"="darkorange4","Epicardium"= "seagreen", "MacroIII"="orange4","LymphECs"= "violet","ECsII"= "honeydew2","Prolif"= "seagreen4", "BcellsCd19"="midnightblue","SchwannCells"= "tomato3", "BcellsECs"="lightblue4"))
+DimPlot(merged7dHomeo, label = FALSE, legend=FALSE, group.by = "celltype", cols=c("HEpiD"="green","ECs"= "grey50","Macro"= "grey49", "Myofb"="forestgreen","MonoI"="grey48","Neutrophils"="grey47","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="grey46","PLS"="greenyellow","MacroII"= "grey46","EndD"="mediumaquamarine","NKT"="grey45","MonoII"="grey44","DCs"="grey43","SMCs"="grey42","IR"="darkgreen","ProlifMacro"="grey41","Epicardium"= "seagreen", "MacroIII"="grey40","grey39"= "violet","ECsII"= "grey38","Prolif"= "grey37", "BcellsCd19"="grey36","SchwannCells"= "grey35", "BcellsECs"="grey34"))
+
+
+
+merged7S <- subset (merged7d, idents=c("D1"))#20
+DimPlot(merged7S, label = FALSE, legend=FALSE, group.by = "celltype", cols=c("HEpiD"="green","ECs"= "grey","Macro"= "darkorange3", "Myofb"="forestgreen","MonoI"="darkorange","Neutrophils"="mediumorchid","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="blue","PLS"="greenyellow","MacroII"= "darkorange2","EndD"="mediumaquamarine","NKT"="lightslateblue","MonoII"="gold2","DCs"="deepskyblue","SMCs"="red","IR"="darkgreen","ProlifMacro"="darkorange4","Epicardium"= "seagreen", "MacroIII"="orange4","LymphECs"= "violet","ECsII"= "honeydew2","Prolif"= "seagreen4", "BcellsCd19"="midnightblue","SchwannCells"= "tomato3", "BcellsECs"="lightblue4"))
+DimPlot(merged7dS, label = FALSE, legend=FALSE, group.by = "celltype", cols=c("HEpiD"="green","ECs"= "grey50","Macro"= "grey49", "Myofb"="forestgreen","MonoI"="grey48","Neutrophils"="grey47","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="grey46","PLS"="greenyellow","MacroII"= "grey46","EndD"="mediumaquamarine","NKT"="grey45","MonoII"="grey44","DCs"="grey43","SMCs"="grey42","IR"="darkgreen","ProlifMacro"="grey41","Epicardium"= "seagreen", "MacroIII"="grey40","grey39"= "violet","ECsII"= "grey38","Prolif"= "grey37", "BcellsCd19"="grey36","SchwannCells"= "grey35", "BcellsECs"="grey34"))
+
+merged7dS <- subset (merged7d, idents=c("D3"))#20
+DimPlot(merged7dS, label = FALSE, legend=FALSE, group.by = "celltype", cols=c("HEpiD"="green","ECs"= "grey","Macro"= "darkorange3", "Myofb"="forestgreen","MonoI"="darkorange","Neutrophils"="mediumorchid","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="blue","PLS"="greenyellow","MacroII"= "darkorange2","EndD"="mediumaquamarine","NKT"="lightslateblue","MonoII"="gold2","DCs"="deepskyblue","SMCs"="red","IR"="darkgreen","ProlifMacro"="darkorange4","Epicardium"= "seagreen", "MacroIII"="orange4","LymphECs"= "violet","ECsII"= "honeydew2","Prolif"= "seagreen4", "BcellsCd19"="midnightblue","SchwannCells"= "tomato3", "BcellsECs"="lightblue4"))
+
+merged7dS <- subset (merged7d, idents=c("D5"))#20
+DimPlot(merged7dS, label = FALSE, legend=FALSE, group.by = "celltype", cols=c("HEpiD"="green","ECs"= "grey","Macro"= "darkorange3", "Myofb"="forestgreen","MonoI"="darkorange","Neutrophils"="mediumorchid","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="blue","PLS"="greenyellow","MacroII"= "darkorange2","EndD"="mediumaquamarine","NKT"="lightslateblue","MonoII"="gold2","DCs"="deepskyblue","SMCs"="red","IR"="darkgreen","ProlifMacro"="darkorange4","Epicardium"= "seagreen", "MacroIII"="orange4","LymphECs"= "violet","ECsII"= "honeydew2","Prolif"= "seagreen4", "BcellsCd19"="midnightblue","SchwannCells"= "tomato3", "BcellsECs"="lightblue4"))
+
+merged7dS <- subset (merged7d, idents=c("D7"))#20
+DimPlot(merged7dS, label = FALSE, legend=FALSE, group.by = "celltype", cols=c("HEpiD"="green","ECs"= "grey","Macro"= "darkorange3", "Myofb"="forestgreen","MonoI"="darkorange","Neutrophils"="mediumorchid","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="blue","PLS"="greenyellow","MacroII"= "darkorange2","EndD"="mediumaquamarine","NKT"="lightslateblue","MonoII"="gold2","DCs"="deepskyblue","SMCs"="red","IR"="darkgreen","ProlifMacro"="darkorange4","Epicardium"= "seagreen", "MacroIII"="orange4","LymphECs"= "violet","ECsII"= "honeydew2","Prolif"= "seagreen4", "BcellsCd19"="midnightblue","SchwannCells"= "tomato3", "BcellsECs"="lightblue4"))
+
+
+merged7dS<- subset (merged7d, idents=c("D14"))#20
+DimPlot(merged7dS, label = FALSE, legend=FALSE, group.by = "celltype", cols=c("HEpiD"="green","ECs"= "grey","Macro"= "darkorange3", "Myofb"="forestgreen","MonoI"="darkorange","Neutrophils"="mediumorchid","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="blue","PLS"="greenyellow","MacroII"= "darkorange2","EndD"="mediumaquamarine","NKT"="lightslateblue","MonoII"="gold2","DCs"="deepskyblue","SMCs"="red","IR"="darkgreen","ProlifMacro"="darkorange4","Epicardium"= "seagreen", "MacroIII"="orange4","LymphECs"= "violet","ECsII"= "honeydew2","Prolif"= "seagreen4", "BcellsCd19"="midnightblue","SchwannCells"= "tomato3", "BcellsECs"="lightblue4"))
+
+merged7dS<- subset (merged7d, idents=c("D28"))#20
+DimPlot(merged7dS, label = FALSE, legend=FALSE, group.by = "celltype", cols=c("HEpiD"="green","ECs"= "grey","Macro"= "darkorange3", "Myofb"="forestgreen","MonoI"="darkorange","Neutrophils"="mediumorchid","HEpiDmt"="limegreen","MFC/LR"="darkolivegreen","Bcells"="blue","PLS"="greenyellow","MacroII"= "darkorange2","EndD"="mediumaquamarine","NKT"="lightslateblue","MonoII"="gold2","DCs"="deepskyblue","SMCs"="red","IR"="darkgreen","ProlifMacro"="darkorange4","Epicardium"= "seagreen", "MacroIII"="orange4","LymphECs"= "violet","ECsII"= "honeydew2","Prolif"= "seagreen4", "BcellsCd19"="midnightblue","SchwannCells"= "tomato3", "BcellsECs"="lightblue4"))
+
+plot_grid(p0,p1, p3, p5, p7, p14, p28)
+```
+
+```{r}
+table(merged7d@meta.data$celltype)
+cell_count = table(merged7d@meta.data$celltype, merged7d@meta.data$orig.ident)
+View(cell_count)
+write.csv(cell_count,"CellCountMerged.csv")
+cell_count2 <- table(merged7d@meta.data$celltype, merged7d@meta.data$orig.ident)
+View(cell_count2)
+write.csv(cell_count2,"CellCountAllCombined2.csv")
+
+cell_count2 <- table(merged7dm@meta.data$celltypemerged, merged7dm@meta.data$orig.ident)
+View(cell_count2)
+write.csv(cell_count2,"CellCountAllCombined2merged7dm.csv")
+```
+```{r}
+
+install.packages("BiocManager") # Needed to install all Bioconductor packages
+BiocManager::install("MAST")
+library("MAST")
+
+```
+
+```{r}
+merged7d1 <- merged7d
+merged7d1[['strain']] <- substring(merged7d1$stim, 1, 1)
+merged7d1[['treatment']] <- substring(merged7d1$stim, 2)
+ 
+ 
+ 
+clusters <- levels(merged7d1)
+diff_expression <- list()
+for (i in 1:26) {
+            this_cluster <- clusters[i]
+            cluster <-subset(merged7d1, idents = this_cluster)
+           # for (treatment in c('Sham','MI')) {
+           # Idents(cluster) <- 'treatment'
+              #         cluster_trt <-  subset(cluster, idents ="MI")
+                        Idents(cluster) <- 'orig.ident'
+                        for (orig.ident in c("Homeo", "D1", "D3", "D5", "D7", "D14", "D28")) {
+                        markers <- FindMarkers(cluster, ident.1=orig.ident,  min.pct = 0.25, test.use = "MAST")
+                        markers$gene <- rownames(markers)
+                        markers$cluster <- this_cluster
+                        markers$orig.ident <- orig.ident
+                        diff_expression[[paste0(this_cluster, " ", orig.ident)]] <- markers
+            }
+}
+
+write_xlsx(diff_expression,"FindMarkers_7TimePointsMerged_Comparison.xlsx")
+###############HEpiD, EndD, PLS, Myofb, LR_MFC
+Idents(merged7dm)<- merged7dm@meta.data$celltypemerged
+cluster <- subset(All.combined1, idents =c( "EndD"))
+Idents(cluster)<- cluster@meta.data$orig.ident
+diff_expression <- list()
+ for (orig.ident in c('Homeo','D1', 'D3', 'D5', 'D7', 'D14', 'D28')) {
+                       # markers <- FindMarkers(cluster_trt, ident.1=strain,  min.pct = 0.25, test.use = "MAST")
+                        markers <- FindMarkers(cluster, ident.1=orig.ident,  min.pct = 0.25, test.use = "MAST")
+                        markers$gene <- rownames(markers)
+                       # markers$cluster <- cluster
+                        markers$orig.ident <- orig.ident
+                        diff_expression[[paste0("Myofb", " ", orig.ident)]] <- markers
+            }
+
+
+write_xlsx(diff_expression,"FindMarkers_7TPMergedEndD.xlsx")
+
+full_dataset <- do.call("rbind", diff_expression)
+ 
+library(readr)
+write_csv(full_dataset, "FindMarkers_7TimePointsMerged_Comparison.csv")
+
+
+
+FeatureScatter(subcluster1, feature1="Pdgfra", feature2 = "Ly6a") 
+ 
+
+
+
+
+
+```
+```{r}
+# Install by executing
+devtools::install_github("daskelly/signac")
+ 
+# Then load
+library(signac)
+# Plot cell composition
+# Imagine you have columns in meta.data called “trt” and “strain”
+#CompareClustersByTrt(seurat_obj, quo(trt), quo(strain))
+CompareClustersByTrt(All.combined1, quo(treatment), quo(strain))
+
+ Idents(All.combined1) <- 'treatment'
+                       MI <-  subset(All.combined1, idents ="MI")
+                        Idents(MI) <- 'celltype'
+CompareClustersByTrt(MI, quo(strain), ci=TRUE)
+
+                       Sham <-  subset(All.combined1, idents ="Sham")
+                        Idents(Sham) <- 'celltype'
+CompareClustersByTrt(Sham, quo(strain), ci = TRUE)
+```
+
+
+```{r}
+##identify differential expressed genes across conditions
+clusters <- levels(merged7d)
+ Idents(merged7d) <- 'celltype'
+avg_expression_merged7d <- list()
+for (i in 1:length(clusters)) {
+         this_cluster <- clusters[i]
+sub <-subset(merged7d, idents = this_cluster)
+#Idents(sub) <- 'treatment'
+#      sub_trt <-  subset(sub, idents ="MI")
+      Idents(sub) <- 'orig.ident'
+avg.sub <- log1p(AverageExpression(sub, verbose = FALSE)$RNA)
+avg.sub$gene <- rownames(avg.sub)
+avg_expression_merged7d[[paste0(this_cluster)]] <- avg.sub
+            }
+
+##treatment MI+strain
+write_xlsx(avg_expression_merged7d,"AvgExpress_Merged7d_AllClusters3225.xlsx")
+full_dataset <- do.call("rbind",avg_expression_merged7d)
+library(readr)
+write_csv(full_dataset, "AvgExpress_Merged7d_AllClusters3225.csv")
+
+avg_expression_merged7d  <- cbind(avg_expression_merged7d$gene, avg_expression_merged7d[,1:ncol(avg_expression_merged7d)])
+avg_expression_merged7d  <- split(avg_expression_merged7d , f=avg_expression_merged7d$cluster)
+write_xlsx(avg_expression_merged7d,"Merged_Avgexpress_3225ccm.xlsx")
+```
+
+```{r}
+##identify differential expressed genes across conditions
+id.cells <- subset(All.combined, idents = "DCsCd209")
+Idents(id.cells) <- "stim"
+avg.id.cells <- log1p(AverageExpression(id.cells, verbose = FALSE)$RNA)
+avg.id.cells$gene <- rownames(avg.id.cells)
+write.csv(avg.id.cells,"avg.Clec9DCs.cellsAllCombined.csv")
+###
+DCs <- subset(All.combined, idents = "DCs")
+Idents(DCs) <- "stim"
+avg.DCs <- log1p(AverageExpression(DCs, verbose = FALSE)$RNA)
+avg.DCs$gene <- rownames(avg.DCs)
+write.csv(avg.DCs,"avg.DCsNODShamMI.csv")
+
+#genes.to.label = avg.t.cells[,0]
+#genes.to.label = genes.to.label[1:10,]
+genes.to.label <- c("Atp5mpl","Slpi","Cxcl2","Ly6a","Bst2","Plac8","Cd209d","Rgs1","Irf8","Cd14","2010107E04Rik","C1qb","Rps10","Pid1","Hspa1a","Ckb","C1qa","Hspa1b","Fam105a","
+Apoe")
+p1 <- ggplot(avg.id.cells, aes(NMI, BMI)) + geom_point() + ggtitle("DCsCd209 Cells")#aes(NMI, BMI)
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+
+#genes.to.label = avg.DCs[,0]
+#genes.to.label = genes.to.label[1:10,]
+genes.to.label <- c("Ccl5","Ifitm1","Ccr7","Cd24a","Igs15", "Retnla", "Lyz2", "Ccl22", "Ccl4","Mlg2", "Ccl9", "Cd209a", "Clec9")
+p2 <- ggplot(avg.DCs, aes(Sham, MI)) + geom_point() + ggtitle("DCs")
+p2 <- LabelPoints(plot = p2, points = genes.to.label, repel = TRUE)
+plot_grid(p1, p2)
+#LabelPoints(plot = p2, points = TopGenes(object = pbmc[["pca"]]), repel = TRUE)
+```
+```{r}
+LR.cells <- subset(All.combined, idents = "LR")
+Idents(LR.cells) <- "stim"
+avg.LR.cells <- log1p(AverageExpression(LR.cells, verbose = FALSE)$RNA)
+avg.LR.cells$gene <- rownames(avg.LR.cells)
+write.csv(avg.LR.cells,"avg.LR.cellsAllCombined.csv")
+
+genes.to.label <- c("Phlda3","Txndc5","Kdelr2","Col5a1","Eif4a1","Pcbp2","Itgb1","Cox7a2l","Spcs1","Atp5g1","Arl1","Snhg18","Thbs4","Wisp2","Timp3","Rtn4","Igf1")
+p1 <- ggplot(avg.LR.cells, aes(BMI,BSham)) + geom_point() + ggtitle("LR Cells")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+#HoverLocator(plot = p1, information = FetchData(object = avg.LR.cells, vars = c("ident", "PC_1", "nFeature_RNA")))
+HoverLocator(plot = p1, information = FetchData(object = avg.LR.cells))
+```
+
+
+```{r}
+saveRDS(NODMIC, "NODMIsamplesCombined.rds")
+saveRDS(NODShamC, "NODShamSamplesCombined.rds")
+saveRDS(All.combined, "NODShamMIIntegrated.rds")
+saveRDS(B6MIC, "B6MIsamplesCombined.rds")
+saveRDS(B6ShamC, "B6ShamSamplesCombined.rds")
+saveRDS(MIB6.combined, "B6ShamMIIntegrated.rds")
+```
+
+```{r}
+install.packages("rJava")
+install.packages("xlsx")
+library("xlsx")
+```
+
+```{r}
+remove (Homeo, D1,D3,D5,D7,D14,D28)
+#All.anchors <- FindIntegrationAnchors(object.list = list(processed_obj_Homeo, processed_obj_D1), dims = 1:30)
+#All.combined <- IntegrateData(anchorset = All.anchors, dims = 1:30)
+#DefaultAssay(All.combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+All.combined <- ScaleData(All.combined, verbose = FALSE)
+All.combined <- RunPCA(All.combined, npcs = 50, verbose = FALSE)
+#Alternative JawStrawplot https://satijalab.org/seurat/v3.0/pbmc3k_tutorial.html
+ElbowPlot(All.combined, ndim=50)
+# t-SNE and Clustering
+
+All.combined <- RunUMAP(All.combined, reduction = "pca", dims = 1:32)
+All.combined <- FindNeighbors(All.combined, reduction = "pca", dims = 1:26)
+All.combined <- FindClusters(All.combined, resolution = 0.5)
+
+#pip install umap-learn on Terminal and restart R
+All.combined@meta.data$orig.ident <- factor(All.combined@meta.data$orig.ident, levels=c("Homeo","D1"))
+p1 <- DimPlot(All.combined, reduction = "umap", group.by = "orig.ident", cols = c("#ffbb00","#ff2f00"))
+#p1 = DimPlot(All.combined, reduction = "umap", group.by = "orig.ident")
+p2 = DimPlot(All.combined, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+HomeoD1 <- All.combined
+```
+```{r}
+All.anchors <- FindIntegrationAnchors(object.list = list(HomeoD1, processed_obj_D3), dims = 1:30)
+All.combined <- IntegrateData(anchorset = All.anchors, dims = 1:30)
+DefaultAssay(All.combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+All.combined <- ScaleData(All.combined, verbose = FALSE)
+
+
+All.combined <- RunPCA(All.combined, npcs = 50, verbose = FALSE)
+#Alternative JawStrawplot https://satijalab.org/seurat/v3.0/pbmc3k_tutorial.html
+ElbowPlot(All.combined, ndim=50)
+# t-SNE and Clustering
+
+All.combined <- RunUMAP(All.combined, reduction = "pca", dims = 1:32)
+All.combined <- FindNeighbors(All.combined, reduction = "pca", dims = 1:26)
+All.combined <- FindClusters(All.combined, resolution = 0.5)
+
+#pip install umap-learn on Terminal and restart R
+All.combined@meta.data$orig.ident <- factor(All.combined@meta.data$orig.ident, levels=c("Homeo","D1","D3"))
+p1 <- DimPlot(All.combined, reduction = "umap", group.by = "orig.ident", cols = c("#ffbb00","#ff2f00","#b5ff3f"))
+#p1 = DimPlot(All.combined, reduction = "umap", group.by = "orig.ident")
+#c("#ffbb00","#ff2f00","#b5ff3f","#3fffb9", "#00a6ff", "#00007f", "#0011ff"))
+p2 = DimPlot(All.combined, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+HomeoD1D3 <- All.combined
+```

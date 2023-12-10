@@ -1,0 +1,439 @@
+---
+title: "test Seurat v3 integration"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#install.packages('Seurat')
+library(Seurat)
+library(Matrix)
+require(openxlsx)
+library(cowplot)
+library(scales)
+library(plyr)
+library(dplyr)
+library(stringr)
+library (reticulate)
+#install.packages('xlsx')
+#library('xlsx')
+#install.packages(c("readxl", "writexl"))
+library(readxl)
+library (writexl)
+library(RColorBrewer)
+```
+
+```{r}
+All.combined<- readRDS("ZsGreen7TPMerged_32-25_ccmregression.rds")
+saveRDS(merged7d, "NewZsGreen7TPMerged_3333_ccmregression.rds")
+Fibros <- readRDS( "ZsGreen7TPMergedFibros_1717.rds")
+saveRDS(Fibros, "ZsGreen7TPMergedFibros_1717.rds")
+```
+
+```{r}
+##Test subclustering
+#Idents(All.combined1)<- 'celltype'
+Idents(All.combined)<- All.combined@meta.data$celltype
+Fibros <- subset (All.combined, idents=c("EndD","PLS","HEpiD","HEpiDmt","MFC/LR","IR","Myofb","Epicardium"))
+ElbowPlot(Fibros, ndim=50)
+# Run the standard workflow for visualization and clustering
+DefaultAssay(Fibros) <- "RNA"
+Fibros <-  FindVariableFeatures(Fibros, selection.method = "vst", nfeatures = 2000)
+Fibros <- ScaleData(Fibros)
+Fibros <- RunPCA(Fibros, npcs = 30, verbose = FALSE)
+#Alternative JawStrawplot https://satijalab.org/seurat/v3.0/pbmc3k_tutorial.html
+#ElbowPlot(NKT, ndim=50)
+# t-SNE and Clustering
+Fibros <- RunUMAP(Fibros, reduction = "pca", dims = 1:17)#1:24 1:26
+Fibros <- FindNeighbors(Fibros, reduction = "pca", dims = 1:17)
+Fibros <- FindClusters(Fibros, resolution = 0.5)
+
+Fibros@meta.data$orig.ident <- factor(Fibros@meta.data$orig.ident, levels=c("Homeo","D1", "D3", "D5", "D7", "D14", "D28"))
+p1 <- DimPlot(Fibros, reduction = "umap", group.by = "orig.ident", cols = c("#ffbb00","#ff2f00","#b5ff3f","#3fffb9", "#00a6ff", "#00007f", "#0011ff"))
+p2 <- DimPlot(Fibros, reduction = "umap", label = TRUE)
+plot_grid(p1, p2)
+
+Idents(Fibros)<- Fibros@meta.data$orig.ident
+FibrosHomeo <- subset (Fibros, idents=c("Homeo"))#20
+p0 <- DimPlot(FibrosHomeo, reduction = "umap", label = FALSE, legend=FALSE, group.by = "RNA_snn_res.0.5", cols=c('0'='#0350FF', '1'='#0B0380','2'='#D6FF49','3'='#26FFCD','4'='#FF6601','5'='#2BFF8D'))
+
+FibrosD1 <- subset (Fibros, idents=c("D1"))#20
+p1 <- DimPlot(FibrosD1, reduction = "umap", label = FALSE, legend=FALSE,group.by = "RNA_snn_res.0.5", cols=c('0'='#0350FF', '1'='#0B0380','2'='#D6FF49','3'='#26FFCD','4'='#FF6601','5'='#2BFF8D'))
+
+FibrosD3 <- subset (Fibros, idents=c("D3"))#20
+p3 <- DimPlot(FibrosD3, reduction = "umap", label = FALSE, legend=FALSE, group.by = "RNA_snn_res.0.5", cols=c('0'='#0350FF', '1'='#0B0380','2'='#D6FF49','3'='#26FFCD','4'='#FF6601','5'='#2BFF8D'))
+
+FibrosD5 <- subset (Fibros, idents=c("D5"))#20
+p5 <- DimPlot(FibrosD5, reduction = "umap", label = FALSE, legend=FALSE, group.by = "RNA_snn_res.0.5", cols=c('0'='#0350FF', '1'='#0B0380','2'='#D6FF49','3'='#26FFCD','4'='#FF6601','5'='#2BFF8D'))
+
+FibrosD7 <- subset (Fibros, idents=c("D7"))#20
+p7 <- DimPlot(FibrosD7, reduction = "umap", label = FALSE,legend=FALSE, group.by = "RNA_snn_res.0.5", cols=c('0'='#0350FF', '1'='#0B0380','2'='#D6FF49','3'='#26FFCD','4'='#FF6601','5'='#2BFF8D'))
+
+FibrosD14 <- subset (Fibros, idents=c("D14"))#20
+p14 <- DimPlot(FibrosD14, reduction = "umap", label = FALSE,legend=FALSE, group.by = "RNA_snn_res.0.5", cols=c('0'='#0350FF', '1'='#0B0380','2'='#D6FF49','3'='#26FFCD','4'='#FF6601','5'='#2BFF8D'))
+FibrosD28 <- subset (Fibros, idents=c("D28"))#20
+p28 <- DimPlot(FibrosD28, reduction = "umap", label = FALSE, legend=FALSE,group.by = "RNA_snn_res.0.5", cols=c('0'='#0350FF', '1'='#0B0380','2'='#D6FF49','3'='#26FFCD','4'='#FF6601','5'='#2BFF8D'))
+
+plot_grid(p0,p1, p3, p5, p7, p14, p28)
+plot_grid(f1,f2,f3,f4,f5,f6)
+```
+
+```{r}
+DefaultAssay(Fibros) <- "RNA"
+Fibros.marker <- FindAllMarkers(Fibros, thresh.use=0.25, min.diff.pct = 0.3, only.pos = TRUE)
+Fibros.marker  <- cbind(Fibros.marker$gene, Fibros.marker[,1:ncol(Fibros.marker)])
+Fibros.marker  <- split(Fibros.marker , f=Fibros.marker$cluster)
+write_xlsx(Fibros.marker,"ZsgreenFibrosmerged_1717.xlsx")
+
+Idents(Fibros)<- Fibros@meta.data$RNA_snn_res.0.5
+markers2 <- FindMarkers(Fibros, ident.1="2",  min.pct = 0.25)
+markers1$gene <- rownames(markers1)
+write_xlsx(markers1,"FindMarkers_Fibros2merged.xlsx")
+
+ 
+```
+
+
+```{r}
+##Fast way to identify markers
+#All.combined.marker <- FindAllMarkers(All.combined, max.cells.per.ident = 100, min.diff.pct = 0.3, only.pos = TRUE)
+#All.combined.marker <- FindAllMarkers(All.combined, max.cells.per.ident = 50, min.diff.pct = 0.3, only.pos = TRUE)
+
+
+Idents(Fibros)<- Fibros@meta.data$RNA_snn_res.0.5
+##20.20
+Fibros<- RenameIdents(Fibros, `0` ="HEpiD" , `1` ="LR" , `2` ="mt" , `3` = "Myofb", `4` = "MFC", `5` ="EndD",`6` ="PLS",`7` ="IR",`8` ="Prolif",`9` ="DC",`10` ="Epicard",`11` ="IFNr")
+
+#All.combined<- StashIdent(MIAll.combined, save.name ="celltype" )
+Fibros[["celltypesub"]] <- Idents(object = Fibros)
+
+
+DimPlot(Fibros, label = FALSE)
+DimPlot(Fibros, label = FALSE, cols=c("HEpiD"="#66CD02" , "LR"="#6B8E24" , "mt"="#458B01" ,  "Myofb"="#40E0D0",  "MFC"="#0533FF", "EndD"="#D2691E","PLS"="#CAFB70","IR"="#B22222","Prolif"="#00CDCD","DC"="#87CEFA","Epicard"="#06F901","IFNr"="#999999"))
+saveRDS(Fibros, "ZsGreen7TPMergedFibros_1717.rds")
+Idents(Fibros)<- Fibros@meta.data$celltypesub
+Idents(Fibros) <- factor(Idents(Fibros), levels = c( "HEpiD" , "LR" , "mt" ,  "Myofb", "MFC", "EndD","PLS","IR","Prolif","DC","Epicard","IFNr" ))
+
+genes <- c("Clec10a", "Itgam", "Clec4b1", "Clec4a1", "Il1r2", "Xcr1", "Rab7b", "Cadm1", "Clec9a", "Itgae", "Cxcr3", "Tlr3", "Clec3b", "Adgre1","Fcgr1","Itgax","Cd209a","Ms4a4c","Cd72", "Ly6c2", "Ccr9", "Ly6d", "Runx2", "Ptprcap", "Cd8a", "Cd8b1", "Ccr7", "Fscn1", "Cd274", "Ccl5", "Il4i1", "Cd200", "Ccl22", "Il12b")
+genes3 <- scan(file="/Users/fortee/Downloads/genesDCsSubCl2.csv", what="character")
+DotPlot(Fibros, features = rev(genes3),split.by = "orig.ident",cols = c("#ffbb00","#ff2f00","#b5ff3f","#3fffb9", "#00a6ff", "#00007f", "#0011ff")) + theme(axis.text.x =element_text(face='italics')) +RotatedAxis()
+genes2 <- scan(file="/Users/fortee/Downloads/genesDCsSubCl.csv", what="character")
+
+
+DotPlot(Fibros, features = rev(genes),split.by = "orig.ident",cols = brewer.pal(n=8, name="Accent")) + RotatedAxis()
+
+Idents(NKTD)<- merged7d@meta.data$RNA_snn_res.0.5
+DoHeatmap(subset(merged7d, downsample = 100), features = markers.to.plot, size = 3 )
+DoHeatmap(Fibros, features =genes, group.by=c("celltypesub"),split.by="orig.ident", group.bar = TRUE, size=3, slot="data" )+ scale_fill_gradientn(colors = rev(RColorBrewer::brewer.pal(n = 10, name = "RdBu")) ) + guides(color=FALSE)
+DoHeatmap(Fibros, features =genes)
+FeatureScatter(Fibros, feature1="Ccr7", feature2 = "Lef1")
+BuildClusterTree(Fibros)
+FeaturePlot(object = Fibros, features = c("Cd3g","Cd3e", "Cd3d","Cd4", "Cd8a", "Cd8b1", "Cd1d1"), reduction = 'umap', pt.size = 1, cols = c(  "grey13","green3"), min.cutoff = 0, max.cutoff = 5, label=FALSE )
+
+FeaturePlot(object = Fibros, features = c("Cd3g","Cd3e", "Cd3d","Cd4", "Cd8a", "Cd8b1", "Cd1d1", "Lef1", "Ccr7","Birc5","Nkg7", "Gzma"), reduction = 'umap',cols = c(  "grey13","green3"), min.cutoff = 0, max.cutoff = 5, label=FALSE )
+
+FeaturePlot(object = Fibros, features = c("Cd3g","Cd3e", "Cd3d","Cd4", "Cd8a", "Cd8b1", "Cd1d1", "Lef1", "Ccr7","Birc5","Nkg7", "Gzma"), reduction = 'umap',cols = c(  "grey0","green"), min.cutoff = 0, max.cutoff = 5, label=FALSE )
+
+FeaturePlot(object = Fibros, features = c("Cd3g", "Cd8b1"), reduction = 'umap', pt.size = 1, blend = T, cols = c( "red", "green"), min.cutoff = 0, max.cutoff = 5, label=TRUE )
+heatmap()
+
+
+Idents(Fibros) <- "celltypesub"
+avg.Fibros <- log1p(AverageExpression(Fibros, verbose = FALSE)$RNA)
+avg.Fibros$gene <- rownames(avg.Fibros)
+write.csv(avg.Fibros,"avg.DCsSubclusters.csv")
+getwd()
+##FindConservedMarkers loop way too long
+```
+
+```{r}
+
+Idents(Fibros)<- Fibros@meta.data$RNA_snn_res.0.5
+##20.20
+Fibros<- RenameIdents(Fibros,  "0"="moDC" ,  "1"="moDCs", "ClassicalDCs2"="cDC1","PlasmocytoidDCs"="pDCs", "ActivatedDCs"="aDCs")
+Fibros<- RenameIdents(Fibros,   "moDCs"="moDC", "pDCs"="pDC", "aDCs"="actDC")
+#All.combined<- StashIdent(MIAll.combined, save.name ="celltype" )
+Fibros[["celltypesub2"]] <- Idents(object = Fibros)
+DimPlot(Fibros, label = FALSE, cols=c('moDC'='#0350FF', "cDC2"='#0B0380',"cDC1"='#D6FF49',"pDC"='#26FFCD',"actDC"='#FF6601'))
+genes3 <- scan(file="/Users/fortee/Downloads/genesDCsSubCl3.csv", what="character")
+Idents(Fibros) <- factor(Idents(Fibros), levels = c("actDC","pDC","moDC","cDC2","cDC1"))
+DotPlot(Fibros, features = (genes3),split.by = "orig.ident", cols=brewer.pal(8, 'Accent'), legend=TRUE) + RotatedAxis()
+DotPlot(Fibros, features = (genes3),split.by = "orig.ident", cols=brewer.pal(8, 'Set2'), legend=TRUE) + RotatedAxis()
+
+DotPlot(Fibros, features = (genes3),split.by = "orig.ident", cols = c("#ffbb00","#ff2f00","#b5ff3f","#3fffb9", "#00a6ff", "#00007f", "#0011ff"), legend=TRUE) + RotatedAxis()
+DotPlot(Fibros, features = (genes3),  legend=TRUE) + RotatedAxis()
+genes3 <- scan(file="/Users/fortee/Downloads/genesDCsSubCl3.csv", what="character")
+genes4 <- scan(file="/Users/fortee/Downloads/genesDCsSubCl4.csv", what="character")
+Idents(Fibros)<- Fibros@meta.data$celltypesub2
+clusters.averages <- AverageExpression(Fibros, return.seurat=TRUE)
+
+Idents(clusters.averages) <- factor(Idents(clusters.averages), levels = c("actDC","pDC","moDC","cDC2","cDC1"))
+Idents(clusters.averages) <- factor(Idents(clusters.averages), levels = c("cDC1","cDC2","moDC","pDC","aDC"))
+DoHeatmap(clusters.averages, features = rev(genes4), size = 5, draw.lines=0, label=FALSE)+theme(axis.text.y = element_text(face ='italic'))#, axis.title.y.right )#+ cols=c('moDC'='#0350FF', "cDC2"='#0B0380',"cDC1"='#D6FF49',"pDC"='#26FFCD',"actDC"='#FF6601')
+DoHeatmap(clusters.averages, features = (genes3), size = 5, draw.lines=0, label=FALSE)#
+
+
+```
+
+```{r}
+
+
+Conserved0 <- FindMarkers(Fibros, ident.1=1,  grouping.var = "stim", verbose = FALSE)
+ Conserved0$gene <- rownames(Conserved0) 
+Conserved1 <- FindConservedMarkers(NKT, ident.1=1,  grouping.var = "stim", verbose = FALSE)
+ Conserved1$gene <- rownames(Conserved1) 
+Conserved2 <- FindConservedMarkers(NKT, ident.1=2,  grouping.var = "stim", verbose = FALSE)
+Conserved2$gene <- rownames(Conserved2) 
+#Conserved3 <- FindConservedMarkers(NKT, ident.1=3,  grouping.var = "stim", verbose = FALSE)#not in Nsham fewer than 3 cells
+Conserved4 <- FindConservedMarkers(NKT, ident.1=4,  grouping.var = "stim", verbose = FALSE)
+Conserved4$gene <- rownames(Conserved4) 
+Conserved5 <- FindConservedMarkers(NKT, ident.1=5,  grouping.var = "stim", verbose = FALSE)
+Conserved5$gene <- rownames(Conserved5) 
+Conserved3<- FindConservedMarkers(NKT, ident.1=3,  grouping.var = "stim", verbose = FALSE)
+Conserved3$gene <- rownames(Conserved3) #less than 3 cells
+write_xlsx(Conserved0,"MacrosubsetinDcs.xlsx")
+write_xlsx(Conserved1,"NKT_ConservedMarkersCluster1.xlsx")
+write_xlsx(Conserved2,"NKT_ConservedMarkersCluster2.xlsx")
+write_xlsx(Conserved4,"NKT_ConservedMarkersCluster4.xlsx")
+write_xlsx(Conserved5,"NKT_ConservedMarkersCluster5.xlsx")
+All.conserved <- list (Conserved0, Conserved1, Conserved2,Conserved3, Conserved4, Conserved5)
+#All.conserved   <- cbind(All.conserved $gene, All.conserved [,1:ncol(All.conserved )])
+#All.conserved   <- split(conserved.marker , f=conserved.marker$cluster)
+write_xlsx(All.conserved,"AllconservedNkt3532_5030.xlsx")
+
+
+Conserved0 <- FindConservedMarkers(NKT, ident.1=0,  grouping.var = "strain", verbose = FALSE)
+ Conserved0$gene <- rownames(Conserved0)
+ Conserved0$cluster <- "0"
+Conserved1 <- FindConservedMarkers(NKT, ident.1=1,  grouping.var = "strain", verbose = FALSE)
+ Conserved1$gene <- rownames(Conserved1) 
+ Conserved1$cluster <- "1"
+Conserved2 <- FindConservedMarkers(NKT, ident.1=2,  grouping.var = "strain", verbose = FALSE)
+Conserved2$gene <- rownames(Conserved2) 
+Conserved2$cluster <- "2"
+#Conserved3 <- FindConservedMarkers(NKT, ident.1=3,  grouping.var = "strain", verbose = FALSE)#not in Nsham fewer than 3 cells
+#Conserved3$gene <- rownames(Conserved3) 
+#Conserved3$cluster <- ident.1
+Conserved4 <- FindConservedMarkers(NKT, ident.1=4,  grouping.var = "strain", verbose = FALSE)
+Conserved4$gene <- rownames(Conserved4) 
+Conserved4$cluster <- "4"
+Conserved5 <- FindConservedMarkers(NKT, ident.1=5,  grouping.var = "strain", verbose = FALSE)
+Conserved5$gene <- rownames(Conserved5) 
+Conserved5$cluster <- "5"
+
+full_dataset <- do.call("rbind", c(Conserved0, Conserved1, Conserved2, Conserved4, Conserved5))
+library(readr)
+write_csv(full_dataset, "AvgExpress_NODB6_AllClusters1005030.csv")
+
+write_xlsx(Conserved0,"NKT_ConservedMarkersCluster0Strain.xlsx")
+write_xlsx(Conserved1,"NKT_ConservedMarkersCluster1Strain.xlsx")
+write_xlsx(Conserved2,"NKT_ConservedMarkersCluster2Strain.xlsx")
+#write_xlsx(Conserved3,"NKT_ConservedMarkersCluster3Strain.xlsx")
+write_xlsx(Conserved4,"NKT_ConservedMarkersCluster4Strain.xlsx")
+write_xlsx(Conserved5,"NKT_ConservedMarkersCluster5Strain.xlsx")
+```
+
+```{r}  
+NKT<- RenameIdents(NKT, `0` = "MigrTcells", `1` = "RegTCell", `2` = "NK", `3` = "T_NOD", `4` = "Arg1", `5` = "Prolif" )
+#NKT<- StashIdent(MINKT, save.name ="celltype" )
+NKT[["celltypeSub"]] <- Idents(object = NKT)
+DimPlot(NKT, label = TRUE)
+#saveRDS(NKT, "FourSetIntegrationNOD_B6.rds")
+NKT <- saveRDS(NKT,"FinalNKTSubset1005030.rds")
+NKT <- readRDS("FinalNKTSubset1005030.rds")
+```
+
+
+```{r}
+Idents(NKT) <- factor(Idents(NKT), levels = c("MigrTcells",  "RegTCell",  "NK",  "T_NOD", "Arg1",  "Prolif"))
+markers.to.plot <- c("Lef1", "Ccr7","Nkg7","Lgals1","S100a6","Pfn1","Ccl5","Itgb1","Igfbp4","Ccr2","S100a4","Ikzf2","Itgb1","Lgals3","Cd48","Lcp1","Traf1","Nkg7", "Gzma","Ncr1","Tyrobp","Fcer1g","Klre1","Klrb1c","Cd8b1","Tcf7","Actn1", "Cd8a", "Cd3d","Arg1", "Il1r1", "Ltb4r1", "Tcrg-C4", "Tnfsf11", "Blk","Cd163l1","Ly6g5b","Tcrg-C1","Actn2","Il17re","Kcnk1", "Cxcr6")
+markers.to.plot <- unique (markers.to.plot)
+DotPlot(NKT, features = rev(markers.to.plot), cols = c("green","blue","orange", "red"), dot.scale = 8, 
+    split.by = "stim") + RotatedAxis()
+```
+
+```{r}
+table(Fibros@meta.data$orig.ident)
+Idents(Fibros) <- Fibros@meta.data$RNA_snn_res.0.5
+cell_countFibros = table(Fibros@meta.data$orig.ident, Fibros@active.ident)
+View(cell_countFibros)
+write.csv(cell_countFibros,"CellCountDCsMerge.csv")
+cell_countFibros <- table(Fibros@meta.data$celltypesub, Fibros@meta.data$orig.ident)
+View(cell_countFibros)
+write.csv(cell_countFibros,"CellCountDcs.csv")
+getwd()
+```
+```{r}
+
+install.packages("BiocManager") # Needed to install all Bioconductor packages
+BiocManager::install("MAST")
+library("MAST")
+
+```
+
+```{r}
+NKT1 <- NKT
+NKT1[['strain']] <- substring(NKT1$stim, 1, 1)
+NKT1[['treatment']] <- substring(NKT1$stim, 2)
+ 
+ 
+ 
+#clusters <- levels(NKT1)
+clusters <- NKT1@meta.data$celltypeSub
+diff_expression <- list()
+for (i in 1:length(clusters)) {
+            this_cluster <- clusters[i]
+            cluster <-subset(NKT1, idents = this_cluster)
+           # for (treatment in c('Sham','MI')) {
+            Idents(cluster) <- 'treatment'
+                       cluster_trt <-  subset(cluster, idents ="Sham")
+                        Idents(cluster_trt) <- 'strain'
+                        for (strain in c('N')) {
+                        markers <- FindMarkers(cluster_trt, ident.1=strain,  min.pct = 0.25, test.use = "MAST")
+                        markers$gene <- rownames(markers)
+                        markers$cluster <- this_cluster
+                        markers$strain <- strain
+                        diff_expression[[paste0(this_cluster, " ", strain)]] <- markers
+            }
+}
+
+write_xlsx(diff_expression,"FindMarkers_NODB6Sham_NKT_Comparison.xlsx")
+
+
+
+full_dataset <- do.call("rbind", diff_expression)
+ 
+library(readr)
+write_csv(full_dataset, "FindMarkers_NODB6Sham_NKT_Comparison.csv")
+```
+
+```{r}
+Idents(NKT1) <- 'celltypeSub'
+            cluster <-subset(NKT1, idents = "MigrTcells")
+           # for (treatment in c('Sham','MI')) {
+            Idents(cluster) <- 'treatment'
+                       cluster_trt <-  subset(cluster, idents ="Sham")
+                        Idents(cluster_trt) <- 'strain'
+                      diff_expression <-   for (strain in c('N')) {
+                        markers <- FindMarkers(cluster_trt, ident.1=strain,  min.pct = 0.25, test.use = "MAST")
+                        markers$gene <- rownames(markers)
+                        markers$cluster <- this_cluster
+                        markers$strain <- strain
+                        diff_expression[[paste0(this_cluster, " ", strain)]] <- markers
+            }
+
+```
+
+```{r}
+ Idents(NKT1) <- NKT1@meta.data$celltypeSub
+ cluster <-subset(NKT1, idents = c("Mix", "MigrTcells"))
+           # for (treatment in c('Sham','MI')) {
+ Idents(cluster) <- 'stim'
+                        markers <- FindMarkers(cluster, ident.1="Mix",  min.pct = 0.25, test.use = "MAST")
+                        markers$gene <- rownames(markers)
+                        markers$cluster <- this_cluster
+                        markers$strain <- strain
+                        diff_expression[[paste0(this_cluster, " ", strain)]] <- markers
+            }
+}
+```
+```{r}
+# Install by executing
+devtools::install_github("daskelly/signac")
+ 
+# Then load
+library(signac)
+# Plot cell composition
+# Imagine you have columns in meta.data called “trt” and “strain”
+#CompareClustersByTrt(seurat_obj, quo(trt), quo(strain))
+CompareClustersByTrt(NKT, quo(treatment), quo(strain))
+
+ Idents(NKT) <- 'treatment'
+                       MI <-  subset(NKT, idents ="MI")
+                        Idents(MI) <- 'celltypeSub'
+CompareClustersByTrt(MI, quo(strain), ci=TRUE)
+
+                       Sham <-  subset(NKT, idents ="Sham")
+                        Idents(Sham) <- 'celltypeSub'
+CompareClustersByTrt(Sham, quo(strain), ci = TRUE)
+```
+
+
+
+
+```{r}
+##identify differential expressed genes across conditions
+clusters <- levels(NKT)
+ Idents(NKT) <- 'celltypeSub'
+avg_expressionNK_MI <- list()
+for (i in 1:length(clusters)) {
+         this_cluster <- clusters[i]
+sub <-subset(NKT, idents = this_cluster)
+#Idents(sub) <- 'treatment'
+ #     sub_trt <-  subset(cluster, idents ="Sham")
+      Idents(sub) <- 'stim'
+avg.sub <- log1p(AverageExpression(sub, verbose = FALSE)$RNA)
+avg.sub$gene <- rownames(avg.sub)
+avg_expressionNK_MI[[paste0(this_cluster, " ", strain)]] <- avg.sub
+            }
+
+
+write_xlsx(avg_expressionNK_MI,"AvgExpress_All_NKTSubcl.xlsx")
+full_dataset <- do.call("rbind", avg_expressionNK_MI)
+library(readr)
+write_csv(full_dataset, "AvgExpress_All_NKTSubcl.csv")
+
+
+
+
+###
+DCs <- subset(All.combined, idents = "DCs")
+Idents(DCs) <- "stim"
+avg.DCs <- log1p(AverageExpression(DCs, verbose = FALSE)$RNA)
+avg.DCs$gene <- rownames(avg.DCs)
+write.csv(avg.DCs,"avg.DCsNODShamMI.csv")
+
+#genes.to.label = avg.t.cells[,0]
+#genes.to.label = genes.to.label[1:10,]
+genes.to.label <- c("Atp5mpl","Nfkbia","Dusp2","Rab5if","Cxcl2","Tpm3-rs7","Btg1","Trim35","Otulinl","Cap1","Marcksl1","Cd83","Il1b")
+p1 <- ggplot(avg.sub, aes(N, B)) + geom_point() + ggtitle("Subcl5")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+
+#genes.to.label = avg.DCs[,0]
+#genes.to.label = genes.to.label[1:10,]
+genes.to.label <- c("Ccl5","Ifitm1","Ccr7","Cd24a","Igs15", "Retnla", "Lyz2", "Ccl22", "Ccl4","Mlg2", "Ccl9", "Cd209a", "Clec9")
+p2 <- ggplot(avg.DCs, aes(Sham, MI)) + geom_point() + ggtitle("DCs")
+p2 <- LabelPoints(plot = p2, points = genes.to.label, repel = TRUE)
+plot_grid(p1, p2)
+#LabelPoints(plot = p2, points = TopGenes(object = pbmc[["pca"]]), repel = TRUE)
+```
+```{r}
+LR.cells <- subset(All.combined, idents = "LR")
+Idents(LR.cells) <- "stim"
+avg.LR.cells <- log1p(AverageExpression(LR.cells, verbose = FALSE)$RNA)
+avg.LR.cells$gene <- rownames(avg.LR.cells)
+write.csv(avg.LR.cells,"avg.LR.cellsAllCombined.csv")
+
+genes.to.label <- c("Phlda3","Txndc5","Kdelr2","Col5a1","Eif4a1","Pcbp2","Itgb1","Cox7a2l","Spcs1","Atp5g1","Arl1","Snhg18","Thbs4","Wisp2","Timp3","Rtn4","Igf1")
+p1 <- ggplot(avg.LR.cells, aes(BMI,BSham)) + geom_point() + ggtitle("LR Cells")
+p1 <- LabelPoints(plot = p1, points = genes.to.label, repel = TRUE)
+#HoverLocator(plot = p1, information = FetchData(object = avg.LR.cells, vars = c("ident", "PC_1", "nFeature_RNA")))
+HoverLocator(plot = p1, information = FetchData(object = avg.LR.cells))
+```
+
+
+```{r}
+saveRDS(NODMIC, "NODMIsamplesCombined.rds")
+saveRDS(NODShamC, "NODShamSamplesCombined.rds")
+saveRDS(All.combined, "NODShamMIIntegrated.rds")
+saveRDS(B6MIC, "B6MIsamplesCombined.rds")
+saveRDS(B6ShamC, "B6ShamSamplesCombined.rds")
+saveRDS(MIB6.combined, "B6ShamMIIntegrated.rds")
+```
+
+```{r}
+install.packages("rJava")
+install.packages("xlsx")
+library("xlsx")
+```
+
+
